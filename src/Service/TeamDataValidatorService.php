@@ -95,11 +95,6 @@ class TeamDataValidatorService
 
 		$rootNodes = array_diff($parents, $teams);
 
-		if (count($rootNodes) !== 1) {
-			$errors[] = 'Hierarchy must have exactly one root node';
-			return;
-		}
-
 		$rootNode = reset($rootNodes);
 
 		foreach ($teamsData as $team) {

@@ -12,12 +12,15 @@ class TeamHierarchyService
 	 * @param array $data
 	 * @return array
 	 */
-	public function buildTeamHierarchy(array $data): array {
-		$teams = array_column($data, 'team');
-		$parentTeams = array_column($data, 'parent_team');
-		$rootParent = array_diff($parentTeams, $teams)[0] ?? '';
+	public function buildTeamHierarchy(array $data): array
+	{
+		$childrenMap = [];
 
-		$rootTeams = array_filter($data, fn($t) => $t['parent_team'] === $rootParent);
+		foreach ($data as $team) {
+			$childrenMap[$team['parent_team']][] = $team;
+		}
+
+		$rootTeams = array_filter($data, fn($t) => $t['parent_team'] === '');
 
 		if (empty($rootTeams)) {
 			throw new RuntimeException('No root team found in hierarchy');
@@ -25,8 +28,7 @@ class TeamHierarchyService
 
 		$hierarchy = [];
 		foreach ($rootTeams as $rootTeam) {
-			$teamName = $rootTeam['team'];
-			$hierarchy[$teamName] = $this->buildTeamNode($teamName, $data);
+			$hierarchy[$rootTeam['team']] = $this->buildTeamNode($rootTeam, $childrenMap);
 		}
 
 		return $hierarchy;
@@ -35,37 +37,25 @@ class TeamHierarchyService
 	/**
 	 * Builds a node based on return json properties structure
 	 *
-	 * @param string $teamName
-	 * @param array $allTeams
+	 * @param array $teamData
+	 * @param array $childrenMap
 	 * @return array
 	 */
-	private function buildTeamNode(string $teamName, array $allTeams): array {
+	private function buildTeamNode(array $teamData, array $childrenMap): array
+	{
 		$node = [
-			'teamName' => '',
-			'parentTeam' => '',
-			'managerName' => '',
-			'businessUnit' => '',
+			'teamName' => $teamData['team'],
+			'parentTeam' => $teamData['parent_team'],
+			'managerName' => $teamData['manager_name'],
+			'businessUnit' => $teamData['business_unit'] ?? '',
 			'teams' => []
 		];
 
-		foreach ($allTeams as $teamData) {
-			if ($teamData['team'] === $teamName) {
-				$node = [
-					'teamName' => $teamData['team'],
-					'parentTeam' => $teamData['parent_team'],
-					'managerName' => $teamData['manager_name'],
-					'businessUnit' => $teamData['business_unit'] ?? '',
-					'teams' => []
-				];
-				break;
-			}
-		}
-
-		$children = array_filter($allTeams, fn($t) => $t['parent_team'] === $teamName);
+		$children = $childrenMap[$teamData['team']] ?? [];
 
 		foreach ($children as $childTeam) {
 			$childTeamName = $childTeam['team'];
-			$node['teams'][$childTeamName] = $this->buildTeamNode($childTeamName, $allTeams);
+			$node['teams'][$childTeamName] = $this->buildTeamNode($childTeam, $childrenMap);
 		}
 
 		return $node;
@@ -79,27 +69,9 @@ class TeamHierarchyService
 	 * @param string $query
 	 * @return array|array[]
 	 */
-	public function filterByTeam(array $hierarchy, string $query): array {
-		$result = [];
-
-		foreach ($hierarchy as $currentTeamName => $teamData) {
-			if ($currentTeamName === $query) {
-				$result[$currentTeamName] = $teamData;
-				continue;
-			}
-
-			$filteredChildren = $this->filterChildrenForTeam($teamData['teams'], $query);
-
-			if (!empty($filteredChildren)) {
-				$result[$currentTeamName] = [
-					'teamName' => $teamData['teamName'],
-					'parentTeam' => $teamData['parentTeam'],
-					'managerName' => $teamData['managerName'],
-					'businessUnit' => $teamData['businessUnit'],
-					'teams' => $filteredChildren
-				];
-			}
-		}
+	public function filterByTeam(array $hierarchy, string $query): array
+	{
+		$result = $this->filterChildrenForTeam($hierarchy, $query);
 
 		return $result ?: $hierarchy;
 	}
@@ -109,7 +81,8 @@ class TeamHierarchyService
 	 * @param string $targetTeamName
 	 * @return array
 	 */
-	private function filterChildrenForTeam(array $teams, string $targetTeamName): array {
+	private function filterChildrenForTeam(array $teams, string $targetTeamName): array
+	{
 		$result = [];
 
 		foreach ($teams as $teamName => $teamData) {
